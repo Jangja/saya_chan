@@ -260,7 +260,7 @@ void makeBook(std::string& cmd){
 		Position pos(StarFEN, 0); // The root position
 		StateInfo state;
 
-		int gameMovetotal = line.length() / 6 ;
+		int gameMovetotal = int(line.length() / 6);
 		for (int i = 0; i < gameMovetotal; ++i){
 			if (moveCount > 80){ break; }
 			std::string moveStrCSA = line.substr(0, 6);

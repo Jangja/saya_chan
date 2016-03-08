@@ -65,12 +65,6 @@ extern void kpk_bitbase_init();
 
 int main(int argc, char* argv[]) {
 
-    // 標準入出力のバッファリングを無効にする
-    // Disable IO buffering for C and C++ standard libraries
-    setvbuf(stdin, NULL, _IONBF, 0);
-    setvbuf(stdout, NULL, _IONBF, 0);
-    cout.rdbuf()->pubsetbuf(NULL, 0);
-    cin.rdbuf()->pubsetbuf(NULL, 0);
 #if defined(NANOHA)
     init_application_once();
 #endif
