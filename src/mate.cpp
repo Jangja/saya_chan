@@ -23,6 +23,64 @@
 #include "movegen.h"
 #include "position.h"
 
+#define USE_M3HASH	// Mate3()結果をハッシュする.
+
+#if !defined(NDEBUG)
+#define DEBUG_MATE2
+#endif
+
+#if defined(DEBUG_MATE2)
+Move pre_check;
+#endif
+
+#if defined(USE_M3HASH)
+#define MATE3_MASK              0x07ffffU	/* 8 * 64K = 512K entry */
+
+// パフォーマンス計測用.
+namespace M3Perform{
+uint64_t called;
+uint64_t hashhit;
+uint64_t override;
+}
+
+namespace {
+struct Mate3_Hash {
+	uint64_t word1, word2;				// word1:key, word2:0-31=black_hand, word2:32-63=move
+} mate3_hash_tbl[ MATE3_MASK + 1 ];
+
+bool probe_m3hash(const Position& pos, Move &m)
+{
+	uint64_t word1, word2;
+	const uint64_t key = pos.get_key();
+	const uint32_t h = pos.hand_value_of(BLACK);
+	const uint32_t index = static_cast<uint32_t>(key) ^ h ^ (h >> 15);
+	const Mate3_Hash now = mate3_hash_tbl[index & MATE3_MASK];
+	word1 = now.word1 ^ now.word2;
+	word2 = now.word2;
+
+	if (word1 != key || static_cast<uint32_t>(word2) != pos.hand_value_of(BLACK)) {
+		return false;
+	}
+	m = static_cast<Move>(word2 >> 32);
+	return true;
+}
+
+void store_m3hash(const Position& pos, const Move m)
+{
+	Mate3_Hash now;
+	const uint64_t key = pos.get_key();
+    const uint32_t h = pos.hand_value_of(BLACK);
+	now.word2 = static_cast<uint64_t>(h) | (static_cast<uint64_t>(m) << 32);
+	now.word1 = key ^ now.word2;
+
+	const uint32_t index = static_cast<uint32_t>(key) ^ h ^ (h >> 15);
+	if (mate3_hash_tbl[index & MATE3_MASK].word1 != 0) M3Perform::override++;
+	mate3_hash_tbl[index & MATE3_MASK] = now;
+}
+
+}
+#endif
+
 //
 //  玉との位置関係
 //
@@ -1746,12 +1804,22 @@ MYABORT();
 //
 int Position::Mate3(const Color us, Move &m)
 {
+	#if defined(USE_M3HASH)
+	M3Perform::called++;
+#endif
     assert(us == side_to_move());
     // 1手詰めを確認
     {
         m = (us == BLACK) ? Mate1ply<BLACK>() :  Mate1ply<WHITE>();
         if (m != MOVE_NONE) return VALUE_MATE;
     }
+
+#if defined(USE_M3HASH)
+	if (probe_m3hash(*this, m)) {
+		M3Perform::hashhit++;
+		return m == MOVE_NONE ? -VALUE_MATE : VALUE_MATE;
+	}
+#endif
 
     MoveStack moves[256];     // 深さ3程度なら十分な大きさ
     MoveStack *cur, *last;
@@ -1767,7 +1835,6 @@ int Position::Mate3(const Color us, Move &m)
         StateInfo newSt;
         Move move = cur->move;
         // 残り３手では打ち歩詰めを回避する必要はないため、不成は読まない
-//        if ((move & MOVE_CHECK_NARAZU) && isUchifudume == false) continue;
         if ((move & MOVE_CHECK_NARAZU)) continue;
         do_move(move, newSt);
         int val;
@@ -1777,10 +1844,16 @@ int Position::Mate3(const Color us, Move &m)
         if (val > valmax) valmax = val;
         if (valmax == VALUE_MATE) {
             m = move;
+            #if defined(USE_M3HASH)
+			store_m3hash(*this, move);
+#endif
             return VALUE_MATE; //詰んだ
         }
     }
 
+#if defined(USE_M3HASH)
+	store_m3hash(*this, MOVE_NONE);
+#endif
     return valmax;
 }
 
@@ -1795,8 +1868,12 @@ int Position::EvasionRest2(const Color us, MoveStack *antichecks)
 {
     if (!in_check()) {
         output_info("Error!:%s玉に王手がかかっていない！\n", us == BLACK ? "先手" : "後手");
+#if defined(DEBUG_MATE2)
+        this->print_csa(pre_check);
+        undo_move(pre_check);
         this->print_csa();
         MYABORT();
+#endif
         return -VALUE_MATE;
     }
 
