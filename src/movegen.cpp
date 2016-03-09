@@ -1188,8 +1188,8 @@ MoveStack* Position::gen_drop(MoveStack* mlist) const
 #if defined(DEBUG_GENERATE)
     while (top != mlist) {
         Move m = top->move;
-        if (!m.IsDrop()) {
-            if (piece_on(Square(m.From())) == EMP) {
+        if (!move_is_drop(m)) {
+            if (piece_on(Square(move_from(m))) == EMP) {
                 assert(false);
             }
         }
@@ -1667,273 +1667,149 @@ MoveStack* Position::gen_move_from(const Color us, MoveStack* mlist, int from, i
 template<Color us>
 MoveStack* Position::generate_capture(MoveStack* mlist) const
 {
-    ///    int teNum = 0;
-    int z;
-    int from;
+	int to;
+	int from;
+	const Color them = (us == BLACK) ? WHITE : BLACK;
+	const effect_t *our_effect = (us == BLACK) ? effectB : effectW;
+	const effect_t *their_effect = (us == BLACK) ? effectW : effectB;
 
-    int kno;    // 駒番号
-    effect_t k;
-    unsigned long id;
+	int kno;	// 駒番号
+	PieceType type;
+	effect_t k;
+	unsigned long id;
 #if defined(DEBUG_GENERATE)
-    MoveStack* top = mlist;
+	MoveStack* top = mlist;
 #endif
 
-    for (kno = 1; kno <= MAX_KOMANO; kno++) {
-        z = knpos[kno];
-        if (OnBoard(z)) {
-            if (us == BLACK) {
-                // 先手番のとき
-                if ((knkind[kno] & GOTE) && EXIST_EFFECT(effectB[z])) {
-                    // 後手の駒に先手の利きがあれば取れる？(要pin情報の考慮)
-                    k = effectB[z] & EFFECT_SHORT_MASK;
-                    while (k) {
-                        _BitScanForward(&id, k);
-                        k &= k - 1;
-                        from = z - NanohaTbl::Direction[id];
-                        if (pin[from] && abs(pin[from]) != abs(NanohaTbl::Direction[id])) continue;
-                        if (ban[from] == SOU) {
-                            // 玉は相手の利きがある駒を取れない
-                            if (EXIST_EFFECT(effectW[z]) == 0) {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else if ((z & 0x0F) <= 0x03) {
-                            // 成れる位置？
-                            if (ban[from] == SGI) {
-                                // 桂銀は成と不成を生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                            else if (ban[from] == SFU) {
-                                // 歩は成のみ生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                            }
-                            else if (ban[from] == SKE) {
-                                // 桂は成を生成し3段目のみ不成を生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                                if ((z & 0xF) == 0x3) {
-                                    mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                    mlist++;
-                                }
-                            }
-                            else {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else {
-                            mlist->move = cons_move(from, z, ban[from], ban[z]);
-                            mlist++;
-                        }
-                    }
-                    k = effectB[z] & EFFECT_LONG_MASK;
-                    while (k) {
-                        _BitScanForward(&id, k);
-                        k &= k - 1;
-                        from = SkipOverEMP(z, -NanohaTbl::Direction[id]);
-                        if (pin[from] && abs(pin[from]) != abs(NanohaTbl::Direction[id])) continue;
-                        if (ban[from] == SKA || ban[from] == SHI) {
-                            // 角飛は成れるときは成のみ生成する
-                            if ((z & 0x0F) <= 0x3 || (from & 0x0F) <= 0x3) {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                            }
-                            else {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else if (ban[from] == SKY) {
-                            if ((z & 0x0F) <= 0x3) {
-                                // 香は3段目のときのみ不成を生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                                if ((z & 0xF) == 0x3) {
-                                    mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                    mlist++;
-                                }
-                            }
-                            else {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else {
-                            mlist->move = cons_move(from, z, ban[from], ban[z]);
-                            mlist++;
-                        }
-                    }
-                }
-            }
-            else {
-                // 後手番のとき
-                if ((knkind[kno] & GOTE) == 0 && EXIST_EFFECT(effectW[z])) {
-                    // 先手の駒に後手の利きがあれば取れる？(要pin情報の考慮)
-                    k = effectW[z] & EFFECT_SHORT_MASK;
-                    while (k) {
-                        _BitScanForward(&id, k);
-                        k &= k - 1;
-                        from = z - NanohaTbl::Direction[id];
-                        if (pin[from] && abs(pin[from]) != abs(NanohaTbl::Direction[id])) continue;
-                        if (ban[from] == GOU) {
-                            // 玉は相手の利きがある駒を取れない
-                            if (EXIST_EFFECT(effectB[z]) == 0) {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else if ((z & 0x0F) >= 0x07) {
-                            // 成れる位置？
-                            if (ban[from] == GGI) {
-                                // 桂銀は成と不成を生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                            else if (ban[from] == GFU) {
-                                // 歩は成のみ生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                            }
-                            else if (ban[from] == GKE) {
-                                // 桂は成を生成し7段目のみ不成を生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                                if ((z & 0xF) == 0x7) {
-                                    mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                    mlist++;
-                                }
-                            }
-                            else {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else {
-                            mlist->move = cons_move(from, z, ban[from], ban[z]);
-                            mlist++;
-                        }
-                    }
-                    k = effectW[z] & EFFECT_LONG_MASK;
-                    while (k) {
-                        _BitScanForward(&id, k);
-                        k &= k - 1;
-                        from = SkipOverEMP(z, -NanohaTbl::Direction[id]);
-                        if (pin[from] && abs(pin[from]) != abs(NanohaTbl::Direction[id])) continue;
-                        if (ban[from] == GKA || ban[from] == GHI) {
-                            // 角飛は成れるときは成のみ生成する
-                            if ((z & 0x0F) >= 0x7 || (from & 0x0F) >= 0x7) {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                            }
-                            else {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else if (ban[from] == GKY) {
-                            if ((z & 0x0F) >= 0x7) {
-                                // 香は7段目のときのみ不成を生成する
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 1);
-                                mlist++;
-                                if ((z & 0xF) == 0x7) {
-                                    mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                    mlist++;
-                                }
-                            }
-                            else {
-                                mlist->move = cons_move(from, z, ban[from], ban[z], 0);
-                                mlist++;
-                            }
-                        }
-                        else {
-                            mlist->move = cons_move(from, z, ban[from], ban[z]);
-                            mlist++;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // 敵陣に飛を成り込む手を生成する
-    if (us == BLACK) {
-        for (kno = KNS_HI; kno <= KNE_HI; kno++) {
-            if (knkind[kno] == SHI) {
-                from = knpos[kno];
-                int dan = from & 0x0F;
-                if (OnBoard(from) && dan >= 4 && (pin[from] == 0 || pin[from] == DIR_UP || pin[from] == DIR_DOWN)) {
-                    int to = SkipOverEMP(from, DIR_UP);
-                    while ((to & 0x0F) <= 2) {
-                        to -= DIR_UP;
-                        mlist->move = cons_move(from, to, ban[from], ban[to], 1);
-                        mlist++;
-                    }
-                }
-            }
-        }
-    }
-    else {
-        for (kno = KNS_HI; kno <= KNE_HI; kno++) {
-            if (knkind[kno] == GHI) {
-                from = knpos[kno];
-                int dan = from & 0x0F;
-                if (OnBoard(from) && dan <= 6 && (pin[from] == 0 || pin[from] == DIR_UP || pin[from] == DIR_DOWN)) {
-                    int to = SkipOverEMP(from, DIR_DOWN);
-                    while ((to & 0x0F) >= 8) {
-                        to -= DIR_DOWN;
-                        mlist->move = cons_move(from, to, ban[from], ban[to], 1);
-                        mlist++;
-                    }
-                }
-            }
-        }
-    }
-    // 歩の成る手を生成
-    if (us == BLACK) {
-        for (kno = KNS_FU; kno <= KNE_FU; kno++) {
-            if (knkind[kno] == SFU) {
-                from = knpos[kno];
-                if (OnBoard(from) && ((from & 0x0F) <= 4) && ban[from + DIR_UP] == EMP) {
-                    if (pin[from] == 0 || abs(pin[from]) == 1) {
-                        mlist->move = cons_move(from, from + DIR_UP, ban[from], ban[from + DIR_UP], 1);
-                        mlist++;
-                    }
-                }
-            }
-        }
-    }
-    else {
-        for (kno = KNS_FU; kno <= KNE_FU; kno++) {
-            if (knkind[kno] == GFU) {
-                from = knpos[kno];
-                if (OnBoard(from) && ((from & 0x0F) >= 6) && ban[from + DIR_DOWN] == EMP) {
-                    if (pin[from] == 0 || abs(pin[from]) == 1) {
-                        mlist->move = cons_move(from, from + DIR_DOWN, ban[from], ban[from + DIR_DOWN], 1);
-                        mlist++;
-                    }
-                }
-            }
-        }
-    }
+	for (kno = 1; kno <= MAX_KOMANO; kno++) {
+		to = knpos[kno];
+		if (OnBoard(to)) {
+			if (color_of(Piece(knkind[kno])) == them && EXIST_EFFECT(our_effect[to])) {
+				// 相手の駒に自分の利きがあれば取れる？(要pin情報の考慮)
+				k = our_effect[to] & EFFECT_SHORT_MASK;
+				while (k) {
+					_BitScanForward(&id, k);
+					k &= k-1;
+					from = to - NanohaTbl::Direction[id];
+					if (pin[from] && abs(pin[from]) != abs(NanohaTbl::Direction[id])) continue;
+					type = type_of(ban[from]);
+					if (type == OU) {
+						// 玉は相手の利きがある駒を取れない
+						if (EXIST_EFFECT(their_effect[to]) == 0) {
+							mlist->move = cons_move(from, to, ban[from], ban[to], 0);
+							mlist++;
+						}
+					} else if (can_promotion<us>(to) || can_promotion<us>(from)) {
+						// 成れる位置？
+						if (type == GI) {
+							// 銀は成と不成を生成する
+							mlist->move = cons_move(from, to, ban[from], ban[to], 1);
+							mlist++;
+							mlist->move = cons_move(from, to, ban[from], ban[to], 0);
+							mlist++;
+						} else if (type == FU) {
+							// 歩は成のみ生成する
+							mlist->move = cons_move(from, to, ban[from], ban[to], 1);
+							mlist++;
+						} else if (type == KE) {
+							// 桂は成を生成し3段目のみ不成を生成する
+							mlist->move = cons_move(from, to, ban[from], ban[to], 1);
+							mlist++;
+							if (is_drop_knight<us>(to)) {
+								mlist->move = cons_move(from, to, ban[from], ban[to], 0);
+								mlist++;
+							}
+						} else {
+							// 歩桂銀以外の駒(金、成駒)
+							mlist->move = cons_move(from, to, ban[from], ban[to], 0);
+							mlist++;
+						}
+					} else {
+						// 成れない位置
+						mlist->move = cons_move(from, to, ban[from], ban[to]);
+						mlist++;
+					}
+				}
+				k = our_effect[to] & EFFECT_LONG_MASK;
+				while (k) {
+					_BitScanForward(&id, k);
+					k &= k-1;
+					from = SkipOverEMP(to, -NanohaTbl::Direction[id]);
+					if (pin[from] && abs(pin[from]) != abs(NanohaTbl::Direction[id])) continue;
+					type = type_of(ban[from]);
+					if (type == KA || type == HI) {
+						// 角飛は成れるときは成のみ生成する
+						if (can_promotion<us>(to) || can_promotion<us>(from)) {
+							mlist->move = cons_move(from, to, ban[from], ban[to], 1);
+							mlist++;
+						} else {
+							mlist->move = cons_move(from, to, ban[from], ban[to], 0);
+							mlist++;
+						}
+					} else if (type == KY) {
+						if (can_promotion<us>(to)) {
+							// 成れる位置
+							mlist->move = cons_move(from, to, ban[from], ban[to], 1);
+							mlist++;
+							// 香は3段目or7段目のときのみ不成を生成する
+							if (is_drop_knight<us>(to)) {
+								mlist->move = cons_move(from, to, ban[from], ban[to], 0);
+								mlist++;
+							}
+						} else {
+							// 成れない位置
+							mlist->move = cons_move(from, to, ban[from], ban[to], 0);
+							mlist++;
+						}
+					} else {
+						// 角飛香以外の駒(馬、竜)
+						mlist->move = cons_move(from, to, ban[from], ban[to]);
+						mlist++;
+					}
+				}
+			}
+		}
+	}
+	// 敵陣に飛を成り込む手を生成する
+	for (kno = KNS_HI; kno <= KNE_HI; kno++) {
+		if (knkind[kno] == make_piece(us, HI)) {
+			from = knpos[kno];
+			if (OnBoard(from) && can_promotion<us>(from) == false && (pin[from] == 0 || pin[from] == DIR_UP || pin[from] == DIR_DOWN)) {
+				const int dir = (us == BLACK) ? DIR_UP : DIR_DOWN;
+				to = SkipOverEMP(from, dir);
+				while (can_promotion<us>(to -= dir)) {
+					mlist->move = cons_move(from, to, ban[from], ban[to], 1);
+					mlist++;
+				}
+			}
+		}
+	}
+	// 歩の成る手を生成
+	for (kno = KNS_FU; kno <= KNE_FU; kno++) {
+		if (knkind[kno] == make_piece(us, FU)) {
+			from = knpos[kno];
+			to = (us == BLACK) ? from + DIR_UP : from + DIR_DOWN;
+			if (OnBoard(from) && can_promotion<us>(to) && ban[to] == EMP) {
+				if (pin[from] == 0 || abs(pin[from]) == 1) {
+					mlist->move = cons_move(from, to, ban[from], ban[to], 1);
+					mlist++;
+				}
+			}
+		}
+	}
 #if defined(DEBUG_GENERATE)
-    while (top != mlist) {
-        Move m = top->move;
-        if (!m.IsDrop()) {
-            if (piece_on(Square(m.From())) == EMP) {
-                assert(false);
-            }
-        }
-        top++;
-    }
+	while (top != mlist) {
+		Move m = top->move;
+		if (!move_is_drop(m)) {
+			if (piece_on(Square(move_from(m))) == EMP) {
+				assert(false);
+			}
+		}
+		top++;
+	}
 #endif
 
-    return mlist;
+	return mlist;
 }
 
 // 玉を動かす手の生成(駒を取らない)
@@ -2013,104 +1889,88 @@ MoveStack* Position::gen_king_noncapture(const Color us, MoveStack* mlist, const
 template <Color us>
 MoveStack* Position::generate_non_capture(MoveStack* mlist) const
 {
-    //    int teNum = 0;
-    int kn;
-    int z;
-    MoveStack* p = mlist;
+	int kn;
+	int from;
+	MoveStack* p = mlist;
 #if defined(DEBUG_GENERATE)
-    MoveStack* top = mlist;
+	MoveStack* top = mlist;
 #endif
 
-    if (us == BLACK) {
-        z = knpos[1];    // 先手玉
-        if (z) mlist = gen_king_noncapture(us, mlist);
-        for (kn = KNS_HI; kn <= KNE_FU; kn++) {
-            z = knpos[kn];
-            if (OnBoard(z)) {
-                if ((knkind[kn] & GOTE) == 0) {
-                    // 先手番のとき
-                    mlist = gen_move_from(us, mlist, z);
-                }
-            }
-        }
-    }
-    else {
-        z = knpos[2];    // 後手玉
-        if (z) mlist = gen_king_noncapture(us, mlist);
-        for (kn = KNS_HI; kn <= KNE_FU; kn++) {
-            z = knpos[kn];
-            if (OnBoard(z)) {
-                if ((knkind[kn] & GOTE) != 0) {
-                    // 後手番のとき
-                    mlist = gen_move_from(us, mlist, z);
-                }
-            }
-        }
-    }
+	from = sq_king<us>();	// 玉
+	if (from) mlist = gen_king_noncapture(us, mlist);	// 詰将棋など玉がない時を顧慮
+	for (kn = KNS_HI; kn <= KNE_FU; kn++) {
+		from = knpos[kn];
+		if (OnBoard(from)) {
+			if (color_of(Piece(knkind[kn])) == us) {
+				// 手番のとき
+				mlist = gen_move_from(us, mlist, from);
+			}
+		}
+	}
 
-    // generate_capture()で生成される手を除く
-    MoveStack *last = mlist;
-    for (mlist = p; mlist < last; mlist++) {
-        Move &tmp = mlist->move;
-        // 取る手はほぼ生成済み
-        //   取る手で成れるのに成らない手は生成していない
-        if (move_captured(tmp) != EMP) {
-            if (is_promotion(tmp)) continue;
-            PieceType pt = move_ptype(tmp);
-            switch (pt) {
-            case FU:
-                if (can_promotion<us>(move_to(tmp))) break;
-                continue;
-            case KE:
-            case GI:
-            case KI:
-            case OU:
-            case TO:
-            case NY:
-            case NK:
-            case NG:
-            case UM:
-            case RY:
-                continue;
-            case KY:
-                if (((us == BLACK && (move_to(tmp) & 0x0F) != 2) ||
-                     (us == WHITE && (move_to(tmp) & 0x0F) != 8))) continue;
-                break;
-            case KA:
-                if (!can_promotion<us>(move_to(tmp)) && !can_promotion<us>(move_from(tmp))) continue;
-                break;
-            case HI:
-                if (!can_promotion<us>(move_to(tmp)) && !can_promotion<us>(move_from(tmp))) continue;
-                break;
-            case PIECE_TYPE_NONE:
-            default:
-                print_csa(tmp);
-                MYABORT();
-                break;
-            }
-        }
-        // 飛車が敵陣に成り込む手は生成済み
-        if (move_ptype(tmp) == HI && is_promotion(tmp) && !can_promotion<us>(move_from(tmp)) && can_promotion<us>(move_to(tmp))) continue;
-        // 歩の成る手は生成済み
-        if (move_ptype(tmp) == FU && is_promotion(tmp)) continue;
-        if (mlist != p) (p++)->move = tmp;
-        else p++;
-    }
+	// generate_capture()で生成される手を除く
+	MoveStack *last = mlist;
+	for (mlist = p; mlist < last; mlist++) {
+		Move &tmp = mlist->move;
+		// 取る手はほぼ生成済み
+		//   取る手で成れるのに成らない手は生成していない
+		if (move_captured(tmp) != EMP) {
+			if (is_promotion(tmp)) continue;
+			// ここで、取る手&&成らない手になっている。
+			PieceType pt = move_ptype(tmp);
+			switch (pt) {
+			case FU:
+				if (can_promotion<us>(move_to(tmp))) break;
+				continue;
+			case KE:
+			case GI:
+			case KI:
+			case OU:
+			case TO:
+			case NY:
+			case NK:
+			case NG:
+			case UM:
+			case RY:
+				continue;
+			case KY:
+				//   香車は3段目(7段目)は生成しているので、除外する(対象は2段目(8段目)のみ)
+				if (((us == BLACK && (move_to(tmp) & 0x0F) != 2) || (us == WHITE && (move_to(tmp) & 0x0F) != 8))) continue;
+				break;
+			case KA:
+			case HI:
+				// 角飛は成らない手を生成していないので、成れるのに成らない手はすべて対象にする
+				if (!can_promotion<us>(move_to(tmp)) && !can_promotion<us>(move_from(tmp))) continue;
+				break;
+			case PIECE_TYPE_NONE:
+			default:
+				print_csa(tmp);
+				MYABORT();
+				break;
+			}
+		}
+		// 飛車が敵陣に成り込む手は生成済み
+		if (move_ptype(tmp) == HI && is_promotion(tmp) && !can_promotion<us>(move_from(tmp)) && can_promotion<us>(move_to(tmp))) continue;
+		// 歩の成る手は生成済み
+		if (move_ptype(tmp) == FU && is_promotion(tmp)) continue;
+		if (mlist != p) (p++)->move = tmp;
+		else p++;
+	}
 
 #if defined(DEBUG_GENERATE)
-    mlist = p;
-    while (top != mlist) {
-        Move m = top->move;
-        if (!m.IsDrop()) {
-            if (piece_on(Square(m.From())) == EMP) {
-                assert(false);
-            }
-        }
-        top++;
-    }
+	mlist = p;
+	while (top != mlist) {
+		Move m = top->move;
+		if (!move_is_drop(m)) {
+			if (piece_on(Square(move_from(m))) == EMP) {
+				assert(false);
+			}
+		}
+		top++;
+	}
 #endif
 
-    return gen_drop<us>(p);
+	return gen_drop<us>(p);
 }
 
 // 王手回避手の生成
@@ -2161,8 +2021,8 @@ MoveStack* Position::generate_evasion(MoveStack* mlist) const
 #if defined(DEBUG_GENERATE)
     while (top != mlist) {
         Move m = top->move;
-        if (!m.IsDrop()) {
-            if (piece_on(Square(m.From())) == EMP) {
+		if (!move_is_drop(m)) {
+			if (piece_on(Square(move_from(m))) == EMP) {
                 assert(false);
             }
         }
@@ -2176,41 +2036,23 @@ MoveStack* Position::generate_evasion(MoveStack* mlist) const
 template<Color us>
 MoveStack* Position::generate_non_evasion(MoveStack* mlist) const
 {
-    int z;
+	int z;
 
-#if defined(DEBUG_GENERATE)
-    MoveStack* top = mlist;
-#endif
-    // 盤上の駒を動かす
-    int kn;
-    if (us == BLACK) {
-        z = knpos[1];    // 先手玉
-        if (z) mlist = gen_move_king(us, mlist);
-        for (kn = KNS_HI; kn <= KNE_FU; kn++) {
-            z = knpos[kn];
-            if (OnBoard(z)) {
-                Piece kind = ban[z];
-                if (!(kind & GOTE)) {
-                    mlist = gen_move_from(us, mlist, z);
-                }
-            }
-        }
-    }
-    else {
-        z = knpos[2];    // 後手玉
-        if (z) mlist = gen_move_king(us, mlist);
-        for (kn = KNS_HI; kn <= KNE_FU; kn++) {
-            z = knpos[kn];
-            if (OnBoard(z)) {
-                Piece kind = ban[z];
-                if (kind & GOTE) {
-                    mlist = gen_move_from(us, mlist, z);
-                }
-            }
-        }
-    }
-
-    return gen_drop<us>(mlist);;
+	// 盤上の駒を動かす
+	int kn;
+	z = (us == BLACK) ? knpos[1] : knpos[2];
+	if (z) mlist = gen_move_king(us, mlist);
+	for (kn = KNS_HI; kn <= KNE_FU; kn++) {
+		z = knpos[kn];
+		if (OnBoard(z)) {
+			Piece kind = ban[z];
+			if (color_of(kind) == us) {
+				mlist = gen_move_from(us, mlist, z);
+			}
+		}
+	}
+	mlist = gen_drop<us>(mlist);
+	return mlist;
 }
 
 // インスタンス化.
