@@ -303,16 +303,16 @@ public:
     template <Color> MoveStack* generate_non_evasion(MoveStack* mlist) const;
     template <Color> MoveStack* generate_legal(MoveStack* mlist) const;
 
-    // 王手関連
-    MoveStack* gen_check_long(const Color us, MoveStack* mlist) const;
-    MoveStack* gen_check_short(const Color us, MoveStack* mlist) const;
-    MoveStack* gen_check_drop(const Color us, MoveStack* mlist, bool &bUchifudume) const;
-    MoveStack* generate_check(const Color us, MoveStack* mlist, bool &bUchifudume) const;
+	// 王手関連
+	template <Color> MoveStack* gen_check_long(MoveStack* mlist) const;
+	template <Color> MoveStack* gen_check_short(MoveStack* mlist) const;
+	template <Color> MoveStack* gen_check_drop(MoveStack* mlist, bool &bUchifudume) const;
+	template <Color> MoveStack* generate_check(MoveStack* mlist, bool &bUchifudume) const;
 
-    // 3手詰め用の手生成
-    MoveStack* gen_check_drop3(const Color us, MoveStack* mlist, bool &bUchifudume) const;
-    MoveStack* generate_check3(const Color us, MoveStack* mlist, bool &bUchifudume) const;            // 王手生成
-    // 王手回避手の生成(3手詰め残り2手用)
+	// 3手詰め用の手生成
+	template <Color> MoveStack* gen_check_drop3(MoveStack* mlist, bool &bUchifudume) const;
+	template <Color> MoveStack* generate_check3(MoveStack* mlist, bool &bUchifudume) const;			// 王手生成
+	// 王手回避手の生成(3手詰め残り2手用)
     MoveStack *generate_evasion_rest2(const Color us, MoveStack *mBuf, effect_t effect, int &Ai);
     MoveStack *generate_evasion_rest2_MoveAi(const Color us, MoveStack *mBuf, effect_t effect);
     MoveStack *generate_evasion_rest2_DropAi(const Color us, MoveStack *mBuf, effect_t effect, int &check_pos);
