@@ -33,7 +33,6 @@
 #define USE_FVKPP2
 //#define TEST_FVKPP
 
-#define EHASH_MASK          0x3fffffU      //* occupies 32MB 
 #define FV_SCALE            32
 #define MATERIAL            (this->material)
 
@@ -55,7 +54,6 @@
 
 enum { pos_n = fe_end * (fe_end + 1) / 2 };
 typedef int16_t pc_on_pc_entry[pos_n];
-uint64_t ehash_tbl[EHASH_MASK + 1];
 
 typedef int16_t kkp_entry[fe_end];
 int16_t kpp3[nsquare][fe_end][fe_end];
@@ -129,48 +127,6 @@ namespace {
     };
 }
 
-void ehash_clear() {
-    memset(ehash_tbl, 0, sizeof(ehash_tbl));
-}
-
-int ehash_probe(uint64_t current_key, unsigned int hand_b, int * __restrict pscore)
-{
-    uint64_t hash_word, hash_key;
-
-    hash_word = ehash_tbl[(unsigned int)current_key & EHASH_MASK];
-
-#if ! defined(__x86_64__)
-    //hash_word ^= hash_word << 32;
-#endif
-
-    current_key ^= (uint64_t)hand_b << 30;
-    current_key &= ~(uint64_t)0x1fffffU;
-
-    hash_key = hash_word;
-    hash_key &= ~(uint64_t)0x1fffffU;
-
-    if (hash_key != current_key) { return 0; }
-
-    *pscore = (int)((unsigned int)hash_word & 0x1fffffU) - 0x100000;
-
-    return 1;
-}
-
-void ehash_store(uint64_t key, unsigned int hand_b, int score)
-{
-    uint64_t hash_word;
-
-    hash_word = key;
-    hash_word ^= (uint64_t)hand_b << 30;
-    hash_word &= ~(uint64_t)0x1fffffU;
-    hash_word |= (uint64_t)(score + 0x100000);
-
-#if ! defined(__x86_64__)
-    //hash_word ^= hash_word << 32;
-#endif
-
-    ehash_tbl[(unsigned int)key & EHASH_MASK] = hash_word;
-}
 
 void Position::init_evaluate()
 {
@@ -252,8 +208,6 @@ void Position::init_evaluate()
         std::cerr << "Can't load '*_synthesized' file." << std::endl;
         exit(-1);
     }
-
-    ehash_clear();
 }
 
 int Position::compute_material() const
@@ -775,16 +729,7 @@ Value Position::evaluate(const Color us, SearchStack* ss)
         score = int(ss->staticEvalRaw);
     }
     else
-#endif
 
-    // ehash
-    /*if (ehash_probe(st->key, HAND_B, &score)) {
-#if defined(EVAL_DIFF)
-        ss->staticEvalRaw = Value(score);
-#endif
-    } else*/
-
-#if defined(EVAL_DIFF)
 	if (calc_difference(ss)) {
         score = int(ss->staticEvalRaw);
         //ehash_store(st->key, HAND_B, score);
@@ -794,7 +739,6 @@ Value Position::evaluate(const Color us, SearchStack* ss)
     {
         // 普通に評価値を計算
         score = evaluate_raw_body();
-        //ehash_store(st->key, HAND_B, score);
 #if defined(EVAL_DIFF)
         ss->staticEvalRaw = Value(score);
 #endif
