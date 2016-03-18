@@ -320,9 +320,11 @@ public:
     // 局面の評価
     static void init_evaluate();
     int make_list_correct(int list0[], int list1[]) const;
-    int evaluate_raw_correct() const;
     Value evaluate_correct(const Color us) const;
+#ifndef EVAL_TWIG
+    int evaluate_raw_correct() const;
     int evaluate_raw_body();
+#endif
     Value evaluate(const Color us, SearchStack* ss);
 
     // 稲庭判定(bInaniwa にセットするため const でない)

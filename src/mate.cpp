@@ -1813,7 +1813,7 @@ int Position::Mate3(const Color us, Move &m)
         if (val > valmax) valmax = val;
         if (valmax == VALUE_MATE) {
             m = move;
-            #if defined(USE_M3HASH)
+#if defined(USE_M3HASH)
 			store_m3hash(*this, move);
 #endif
             return VALUE_MATE; //詰んだ

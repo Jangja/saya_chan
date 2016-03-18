@@ -33,7 +33,6 @@
 #define USE_FVKPP2
 //#define TEST_FVKPP
 
-#define EHASH_MASK          0x3fffffU      //* occupies 32MB 
 #define FV_SCALE            32
 #define MATERIAL            (this->material)
 
@@ -54,13 +53,18 @@
 #define I2HandRook(hand)    (((hand) & HAND_HI_MASK) >> HAND_HI_SHIFT)
 
 enum { pos_n = fe_end * (fe_end + 1) / 2 };
+#ifdef EVAL_TWIG
+std::array<int16_t, 2> Evaluater::KPP[nsquare][fe_end][fe_end];
+std::array<int32_t, 2> Evaluater::KKP[nsquare][nsquare][fe_end];
+std::array<int32_t, 2> Evaluater::KK[nsquare][nsquare];
+#else
 typedef int16_t pc_on_pc_entry[pos_n];
-uint64_t ehash_tbl[EHASH_MASK + 1];
 
 typedef int16_t kkp_entry[fe_end];
 int16_t kpp3[nsquare][fe_end][fe_end];
 int32_t kkp[nsquare][nsquare][fe_end];
 int32_t kk[nsquare][nsquare];
+#endif
 
 namespace NanohaTbl {
     const short z2sq[] = {
@@ -129,51 +133,12 @@ namespace {
     };
 }
 
-void ehash_clear() {
-    memset(ehash_tbl, 0, sizeof(ehash_tbl));
-}
-
-int ehash_probe(uint64_t current_key, unsigned int hand_b, int * __restrict pscore)
-{
-    uint64_t hash_word, hash_key;
-
-    hash_word = ehash_tbl[(unsigned int)current_key & EHASH_MASK];
-
-#if ! defined(__x86_64__)
-    //hash_word ^= hash_word << 32;
-#endif
-
-    current_key ^= (uint64_t)hand_b << 30;
-    current_key &= ~(uint64_t)0x1fffffU;
-
-    hash_key = hash_word;
-    hash_key &= ~(uint64_t)0x1fffffU;
-
-    if (hash_key != current_key) { return 0; }
-
-    *pscore = (int)((unsigned int)hash_word & 0x1fffffU) - 0x100000;
-
-    return 1;
-}
-
-void ehash_store(uint64_t key, unsigned int hand_b, int score)
-{
-    uint64_t hash_word;
-
-    hash_word = key;
-    hash_word ^= (uint64_t)hand_b << 30;
-    hash_word &= ~(uint64_t)0x1fffffU;
-    hash_word |= (uint64_t)(score + 0x100000);
-
-#if ! defined(__x86_64__)
-    //hash_word ^= hash_word << 32;
-#endif
-
-    ehash_tbl[(unsigned int)key & EHASH_MASK] = hash_word;
-}
 
 void Position::init_evaluate()
 {
+#ifdef EVAL_TWIG
+    Evaluater::init();
+#else
 	FILE *fp = NULL;
 	size_t size;
     int iret = 0;
@@ -252,8 +217,7 @@ void Position::init_evaluate()
         std::cerr << "Can't load '*_synthesized' file." << std::endl;
         exit(-1);
     }
-
-    ehash_clear();
+#endif
 }
 
 int Position::compute_material() const
@@ -464,6 +428,65 @@ int Position::make_list_correct(int list0[PIECENUMBER_MAX + 1],
     return nlist;
 }
 
+#ifdef EVAL_TWIG
+// 評価関数が正しいかどうかを判定するのに使う
+Value Position::evaluate_correct(const Color us) const
+{
+    int list0[PIECENUMBER_MAX + 1]; //駒番号numのlist0
+    int list1[PIECENUMBER_MAX + 1]; //駒番号numのlist1
+    int nlist = make_list_correct(list0, list1);
+
+    const int sq_bk = SQ_BKING;
+    const int sq_wk = SQ_WKING;
+    const auto* ppkppb = Evaluater::KPP[sq_bk];
+    const auto* ppkppw = Evaluater::KPP[Inv(sq_wk)];
+
+    EvalSum score;
+    score.p[2] = Evaluater::KK[sq_bk][sq_wk];
+#if defined USE_AVX2_EVAL || defined USE_SSE_EVAL
+    score.m[0] = _mm_setzero_si128();
+    for (int i = 0; i < nlist; ++i) {
+      const int k0 = list0[i];
+      const int k1 = list1[i];
+      const auto* pkppb = ppkppb[k0];
+      const auto* pkppw = ppkppw[k1];
+      for (int j = 0; j < i; ++j) {
+        const int l0 = list0[j];
+        const int l1 = list1[j];
+        __m128i tmp;
+        tmp = _mm_set_epi32(0, 0, *reinterpret_cast<const int32_t*>(&pkppw[l1][0]), *reinterpret_cast<const int32_t*>(&pkppb[l0][0]));
+        tmp = _mm_cvtepi16_epi32(tmp);
+        score.m[0] = _mm_add_epi32(score.m[0], tmp);
+      }
+      score.p[2] += Evaluater::KKP[sq_bk][sq_wk][k0];
+    }
+#else
+    score.p[0][0] = 0;
+    score.p[0][1] = 0;
+    score.p[1][0] = 0;
+    score.p[1][1] = 0;
+	for (int i = 0; i < nlist; i++ ) {
+		const int k0 = list0[i];
+		const int k1 = list1[i];
+		assert(0 <= k0 && k0 < fe_end);
+		assert(0 <= k1 && k1 < fe_end);
+		const auto* pkppb = ppkppb[k0];
+		const auto* pkppw = ppkppw[k1];
+		for (int j = 0; j < i; j++ ) {
+			const int l0 = list0[j];
+			const int l1 = list1[j];
+			assert(0 <= l0 && l0 < fe_end);
+			assert(0 <= l1 && l1 < fe_end);
+            score.p[0] += pkppb[l0];
+            score.p[1] += pkppw[l1];
+		}
+        score.p[2] += Evaluater::KKP[sq_bk][sq_wk][k0];
+	}
+#endif
+    score.p[2][0] += MATERIAL * FV_SCALE;
+    return Value(score.sum(us) / FV_SCALE);
+}
+#else
 // 評価値のスケール前の値を計算します。
 int Position::evaluate_raw_correct() const
 {
@@ -502,6 +525,7 @@ Value Position::evaluate_correct(const Color us) const
     score = (us == BLACK) ? score : -score;
     return Value(score);
 }
+#endif
 
 
 #if defined(MAKELIST_DIFF)
@@ -644,6 +668,7 @@ void Position::make_list_undo_drop(PieceNumber kn, Piece piece)
     handcount[piece]++;
 }
 
+#ifndef EVAL_TWIG
 int Position::evaluate_raw_make_list_diff()
 {
     const int sq_bk = SQ_BKING;
@@ -669,6 +694,7 @@ int Position::evaluate_raw_make_list_diff()
 
     return score;
 }
+#endif
 #endif
 
 
@@ -752,7 +778,62 @@ bool Position::calc_difference(SearchStack* ss) const
 }
 #endif
 
+#ifdef EVAL_TWIG
+Value Position::evaluate(const Color us, SearchStack* ss)
+{
+	const int sq_bk = SQ_BKING;
+	const int sq_wk = SQ_WKING;
+	assert(0 <= sq_bk && sq_bk < nsquare);
+	assert(0 <= sq_wk && sq_wk < nsquare);
+	const auto* ppkppb = Evaluater::KPP[sq_bk     ];
+	const auto* ppkppw = Evaluater::KPP[Inv(sq_wk)];
 
+    EvalSum score;
+    score.p[2] = Evaluater::KK[sq_bk][sq_wk];
+#if defined USE_AVX2_EVAL || defined USE_SSE_EVAL
+    score.m[0] = _mm_setzero_si128();
+    for (int kn = PIECENUMBER_MIN; kn <= PIECENUMBER_MAX; kn++) {
+      const int k0 = list0[kn];
+      const int k1 = list1[kn];
+      const auto* pkppb = ppkppb[k0];
+      const auto* pkppw = ppkppw[k1];
+      for (int j = PIECENUMBER_MIN; j < kn; j++) {
+        const int l0 = list0[j];
+        const int l1 = list1[j];
+        __m128i tmp;
+        tmp = _mm_set_epi32(0, 0, *reinterpret_cast<const int32_t*>(&pkppw[l1][0]), *reinterpret_cast<const int32_t*>(&pkppb[l0][0]));
+        tmp = _mm_cvtepi16_epi32(tmp);
+        score.m[0] = _mm_add_epi32(score.m[0], tmp);
+      }
+      score.p[2] += Evaluater::KKP[sq_bk][sq_wk][k0];
+    }
+#else
+    score.p[0][0] = 0;
+    score.p[0][1] = 0;
+    score.p[1][0] = 0;
+    score.p[1][1] = 0;
+	for (int i = 0; i < nlist; i++ ) {
+		const int k0 = list0[i];
+		const int k1 = list1[i];
+		assert(0 <= k0 && k0 < fe_end);
+		assert(0 <= k1 && k1 < fe_end);
+		const auto* pkppb = ppkppb[k0];
+		const auto* pkppw = ppkppw[k1];
+		for (int j = 0; j < i; j++ ) {
+			const int l0 = list0[j];
+			const int l1 = list1[j];
+			assert(0 <= l0 && l0 < fe_end);
+			assert(0 <= l1 && l1 < fe_end);
+            score.p[0] += pkppb[l0];
+            score.p[1] += pkppw[l1];
+		}
+        score.p[2] += Evaluater::KKP[sq_bk][sq_wk][k0];
+	}
+#endif
+    score.p[2][0] += MATERIAL * FV_SCALE;
+    return Value(score.sum(us) / FV_SCALE);
+}
+#else
 int Position::evaluate_raw_body()
 {
 #if defined(MAKELIST_DIFF)
@@ -775,16 +856,7 @@ Value Position::evaluate(const Color us, SearchStack* ss)
         score = int(ss->staticEvalRaw);
     }
     else
-#endif
 
-    // ehash
-    /*if (ehash_probe(st->key, HAND_B, &score)) {
-#if defined(EVAL_DIFF)
-        ss->staticEvalRaw = Value(score);
-#endif
-    } else*/
-
-#if defined(EVAL_DIFF)
 	if (calc_difference(ss)) {
         score = int(ss->staticEvalRaw);
         //ehash_store(st->key, HAND_B, score);
@@ -794,7 +866,6 @@ Value Position::evaluate(const Color us, SearchStack* ss)
     {
         // 普通に評価値を計算
         score = evaluate_raw_body();
-        //ehash_store(st->key, HAND_B, score);
 #if defined(EVAL_DIFF)
         ss->staticEvalRaw = Value(score);
 #endif
@@ -813,3 +884,4 @@ Value Position::evaluate(const Color us, SearchStack* ss)
     score = (us == BLACK) ? score : -score;
     return Value(score);
 }
+#endif
