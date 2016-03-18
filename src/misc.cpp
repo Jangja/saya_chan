@@ -58,7 +58,11 @@ using namespace std;
 /// current date (in the format YYMMDD) is used as a version number.
 
 #if defined(SAYA)
+#ifdef EVAL_TWIG
+static const string AppName = "SayaTwig";
+#else
 static const string AppName = "Saya_chan";
+#endif
 #if defined(EVAL_DIFF)
 static const string EngineVersion = "0.1.11 Eval_Diff";
 #elif defined(MAKELIST_DIFF)
